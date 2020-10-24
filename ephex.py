@@ -1,23 +1,23 @@
 #!/usr/bin/env python2.7
+import sys
+if sys.version_info < (3,0):
+  sys.exit("EPHEX now requires Python 3 or later.")
+
+import os
 from ephex_core import *
 
-f = EPHEX()
-
-import sys, os
 
 fnum = 0
 while os.path.exists("%s.svg" % (fnum,)):
   fnum += 1
-
-err_out("Starting with " + str(fnum))
 
 outfile = None
 
 def newfile ():
   global fnum
   global outfile
-  outfile = file("%s.svg" % (fnum,), "w")
-  err_out("Opening %s" % (fnum,))
+  outfile = open("%s.svg" % (fnum), "w")
+  err_out("Opening %s" % (outfile))
   fnum += 1
 
 def out (s):
@@ -36,10 +36,10 @@ def formfeed (dummy):
   err_out("Form feed")
   closefile()
 
+f = EPHEX()
 f.form_feed_callback = formfeed
 
-
-data = file(sys.argv[1], 'rb').read()
+data = open(sys.argv[1], 'rb').read()
 f.feed_input(data)
 
 sys.stdout.write(f.save_to_string())
