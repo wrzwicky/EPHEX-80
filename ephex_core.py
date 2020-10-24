@@ -1,8 +1,4 @@
-try:
-  from ephex_charset import chars, widths
-except Exception:
-  # Well, at least bitmaps will work
-  pass
+from ephex_charset import chars, widths
   
 from array import array
 import sys
@@ -22,7 +18,7 @@ DOT = """<circle cx="{x}" cy="{y}" r="{r}" style="stroke-width:0px; fill-opacity
 
 
 def err_out (s):
-  print >>sys.stderr, s
+  print(s, file=sys.stderr)
 
 
 def scale (n):
@@ -61,12 +57,13 @@ class EPHEX (object):
     # Line spacing.  This is the default for this printer.
     self.line_spacing = 12
 
+    # x/y are in points (72 per inch) regardless of printer resolution
     self.x = self.left_edge
     self.y = 0
 
     # Set functions to handle the single-character control codes
     self._codes = {}
-    for c,f in self.__class__.__dict__.iteritems():
+    for c,f in self.__class__.__dict__.items():
       if c.startswith("_code_"):
         ch = int(c[6:], 16)
         self._codes[chr(ch)] = getattr(self, c)
@@ -81,7 +78,7 @@ class EPHEX (object):
     self._g.send(None)
 
   def _code_7 (self):
-    out("<!-- BEEP -->")
+    err_out("<!-- BEEP -->")
 
   def _code_8 (self):
     # Backspace
@@ -109,7 +106,6 @@ class EPHEX (object):
     # Carriage return
     self.x = self.left_edge
 
-
   def save (self, file_or_name):
     close = False
     if isinstance(file_or_name, str):
@@ -130,7 +126,7 @@ class EPHEX (object):
 
   def drain (self):
     s = ''
-    for i in xrange(len(self._xs)):
+    for i in range(len(self._xs)):
       x = self._xs[i]
       y = self._ys[i]
 
@@ -146,7 +142,7 @@ class EPHEX (object):
     assert len(self._xs) == len(self._ys)
     yield SVG_HEADER.format(w=scale(8.5*72), h=scale(11*72))
 
-    for i in xrange(len(self._xs)):
+    for i in range(len(self._xs)):
       x = self._xs[i]
       y = self._ys[i]
 
@@ -191,46 +187,53 @@ class EPHEX (object):
     Creates the generator used for feeding input data.
     """
     while True:
-      c = (yield)
-      if c is None: break
+      cn = (yield)
+      if cn is None: break
+      c = chr(cn)
       f = self._codes.get(c)
       if f is not None:
         f()
       elif c >= ' ' and c <= '\xf8':
         self._print(c)
       elif c == '\x1b':
-        c = (yield)
-        cn = ord(c)
+        cn = (yield)
+        c = chr(cn)
 
         # Line Spacing
-        if c == '0':
+        if c == '0':                   # 1/8-inch line spacing
           self.line_spacing = 9
-        elif c == '1':
+        elif c == '1':                 # 7/72-inch line spacing
           self.line_spacing = 7
-        elif c == '2':
+        elif c == '2':                 # 1/6-inch line spacing
           self.line_spacing = 12
-        elif c == 'A':
-          c = ord((yield))
-          self.line_spacing = c
-        elif c == '3':
-          c = ord((yield))
+        elif c == '3':                 # n/216-inch line spacing
+          c = (yield)
           self.line_spacing = c/3.0
-        elif c == 'J':
-          c = ord((yield))/3.0
+        elif c == 'A':                 # n/72-inch line spacing
+          c = (yield)
+          self.line_spacing = c
+        elif c == 'J':                 # Perform n/216-inch line feed
+          c = (yield)/3.0
           self.y += c
-        elif c == 'j':
-          c = ord((yield))/3.0
+        elif c == 'j':                 # Perform reverse n/216-inch line feed
+          c = (yield)/3.0
           self.y -= c
 
         elif c == 'p':
           # Proportional
-          c = (yield)
+          c = chr((yield))
           self.proportional = (c == '1')
+
+        ##SG-10
+        elif c == 'M':                 # Left margin at char (n+1)
+          c = (yield)
+          # exact pos depends on pica/elite, but we don't support elite
+          self.left_edge = c/8. * 72.
 
         # Dot Graphics
         elif c == "?":
-          c = (yield)
-          m = ord((yield))
+          c = chr((yield))
+          m = (yield)
           if c in "KLYZ":
             self._graphic_modes[c] = m
           else:
@@ -244,7 +247,7 @@ class EPHEX (object):
           m = self._graphic_modes.get(c)
           if m is None:
             if c == "*":
-              m = ord((yield))
+              m = (yield)
 
           if m == 0:
             ppi = 1.0/60
@@ -263,14 +266,17 @@ class EPHEX (object):
           elif m == 6:
             ppi = 1.0/90
 
-          n1 = ord((yield))
-          n2 = ord((yield))
+          n1 = (yield)
+          n2 = (yield)
           w = n1 + n2 * 256
 
-          for i in xrange(w):
-            c = ord((yield))
+          for i in range(w):
+            c = (yield)
             self._stripe(c)
             self.x += (ppi * 72.0)
 
         else:
-          sys.stderr.write("Don't know %X (%s).\n" % (ord(c),ord(c)))
+          sys.stderr.write("Don't know ESC-%s ($%X).\n" % (c,ord(c)))
+
+      else:
+        sys.stderr.write("Don't know %s ($%X).\n" % (c,ord(c)))
